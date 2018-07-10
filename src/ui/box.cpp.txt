@@ -1,0 +1,480 @@
+#include "DebugDraw.h"
+#include "box2dtest.h"
+#include "imgui.h"
+#include "test.h"
+#include <Box2D/Box2D.h>
+#include <stdio.h>
+#include <stdlib.h>
+Test *getRobot();
+Test *getWalker();
+static b2World *w;
+static Test *test;
+//#define USElimit
+
+void box2d_gravity(float x, float y) {
+  // w->SetGravity(b2Vec2(-x, -y));
+}
+struct PoseBody {
+  b2Body *target;
+  b2Vec2 mtx;
+  float32 angle;
+  void set(b2Body *b) {
+    mtx = b->GetPosition();
+    angle = b->GetAngle();
+    target = b;
+  }
+  void reset() {
+    if (target) {
+      target->SetTransform(mtx, angle);
+      target->SetLinearVelocity(b2Vec2_zero);
+      target->SetAngularVelocity(0.f);
+    }
+  }
+};
+#define BODY_COUNT 2
+#define HEGHT 24
+#define SIZE 2
+PoseBody poses[BODY_COUNT];
+extern class b2Draw *debugDraw;
+b2Body *m_groundBody;
+void box2d_init() {
+  srand48(time(0));
+  b2Vec2 g(0, -10);
+  w = new b2World(g);
+  w->SetDebugDraw(debugDraw);
+  debugDraw->SetFlags(b2Draw::e_shapeBit /* | b2Draw::e_jointBit*/);
+  b2BodyDef def;
+  def.type = b2_staticBody;
+  m_groundBody = w->CreateBody(&def);
+  b2PolygonShape box; // = new b2PolygonShape();
+  box.SetAsBox(10.f, .2f, b2Vec2(0, -.2), 0);
+  m_groundBody->CreateFixture(&box, 1);
+  b2Body *t = m_groundBody;
+  box.SetAsBox(.2f, 5.f, b2Vec2(10.2f, 5), 0);
+  m_groundBody->CreateFixture(&box, 1);
+  box.SetAsBox(.2f, 5.f, b2Vec2(-10.2f, 5), 0);
+  m_groundBody->CreateFixture(&box, 1);
+  def.type = b2_dynamicBody;
+  def.angle = 1;
+  /*box.SetAsBox(.28f, .42f);
+  for (int i = 0; i < 20; ++i) {
+    def.position.Set(8 * drand48() - 4, 1 + drand48() * 11);
+    w->CreateBody(&def)->CreateFixture(&box, 1);
+  }*/
+  // def.type = b2_staticBody;
+  box.SetAsBox(SIZE * .125f, SIZE);
+  b2Filter filter;
+  filter.groupIndex = -1;
+  filter.categoryBits = 2;
+  b2RevoluteJointDef jd;
+  for (int i = 0; i < BODY_COUNT; ++i) {
+    def.position.Set(0, HEGHT + (0 * 2 + 1) * SIZE);
+    def.angle = 0;
+    // def.gravityScale = 0.0f;
+    def.allowSleep = false;
+    b2Body *b = w->CreateBody(&def);
+    if (i > 0)
+      box.SetAsBox(SIZE * .125f, SIZE * 0.5, b2Vec2(0, SIZE * 0.5), 0);
+    b->CreateFixture(&box, 20)->SetFilterData(filter);
+    poses[i].set(b);
+    jd.Initialize(t, b, b2Vec2(0, HEGHT + i * 2 * SIZE));
+    b2Joint *j = w->CreateJoint(&jd);
+    if (e_revoluteJoint == j->GetType()) {
+      if (i > 0) {
+        ((b2RevoluteJoint *)j)->EnableMotor(true);
+        ((b2RevoluteJoint *)j)->SetMaxMotorTorque((BODY_COUNT - i) * 500);
+        ((b2RevoluteJoint *)j)->SetMotorSpeed(1 /*(BODY_COUNT - i) * 500*/);
+      }
+    } else if (j->GetType() == e_prismaticJoint) {
+      ((b2PrismaticJoint *)j)->EnableLimit(true);
+      ((b2PrismaticJoint *)j)->SetLimits(0, SIZE + SIZE);
+      ((b2PrismaticJoint *)j)->EnableMotor(true);
+      ((b2PrismaticJoint *)j)->SetMaxMotorForce(3000);
+    }
+    t = b;
+    def.type = b2_dynamicBody;
+  }
+  test = getWalker();
+  test->init(w, m_groundBody);
+}
+// extern "C" void debugFlush();
+b2Vec2 point;
+bool over = false; /*
+ float rs[100];
+ float ds[100];*/
+int rsStep = 0;
+void box2d_draw() {
+  w->DrawDebugData();
+  // debugFlush();
+  /*auto j = w->GetJointList();
+  while (j) {
+    auto force = j->GetReactionForce(1.0 / 0.025f);
+    auto point = 0.5f * (j->GetAnchorA() + j->GetAnchorB());
+    debugDraw->DrawSegment(point, point + force, b2Color(0, 1, 0));
+    j = j->GetNext();
+  }*/
+  test->draw(w);
+  auto msg = test->info();
+  if (msg && *msg) {
+    g_debugDraw.DrawString(10, 86, msg);
+  }
+#if 0
+#define NN_SIZE 64.0
+  {
+    if (rsStep == 0) {
+      actor.reset(new actor_net::ActorNet(2, 50, 50, 2));
+      critic.reset(new critic_net::CriticNet(2, 2, 50, 50, 30, 1));
+    }
+    static array a(20, 2);
+    static array states_t(200, 2), actions(200, 2), states_t_1(200, 2), rw(200, 1);
+    if (rsStep % 10 == 0) {
+      auto rr = drand48();
+      for (int i = 0; i < 20; ++i) {
+        b2Rot root(drand48() * b2_pi * 2);
+        auto dd = drand48() * 5 * root.GetXAxis();
+        a.data[0 + i * 2] = dd.x;
+        a.data[1 + i * 2] = dd.y;
+        b2Rot rt(drand48() * b2_pi * 2);
+        auto d = drand48() * rt.GetXAxis();
+        a.data[0 + i * 2] = a.data[0 + i * 2] + d.x;
+        a.data[1 + i * 2] = a.data[1 + i * 2] + d.y;
+        for (int j = 0; j < 10; ++j) {
+          states_t[i * 10 + j][0] = a[i][0];
+          states_t[i * 10 + j][1] = a[i][1];
+          b2Rot rt(drand48() * b2_pi * 2);
+          rr = drand48() + 0.5;
+          actions[i * 10 + j][0] = rt.GetXAxis().x * rr;
+          actions[i * 10 + j][1] = rt.GetXAxis().y * rr;
+          states_t_1[i * 10 + j][0] = a[i][0] + actions[i * 10 + j][0];
+          states_t_1[i * 10 + j][1] = a[i][1] + actions[i * 10 + j][1];
+          b2Vec2 n(a[i][0], a[i][1]);
+          b2Vec2 m(states_t_1[i * 10 + j][0], states_t_1[i * 10 + j][1]);
+          auto t = 0.85 * n;
+          auto offset = 1 / (0.05 + b2Distance(t, n));
+          rw[i * 10 + j][0] = 1 / (0.05 + b2Distance(t, m)) - offset;
+        }
+      }
+    }
+    for (int i = 0; i < 20; ++i) {
+      g_debugDraw.DrawCircle(b2Vec2(a.data[0 + i * 2], a.data[1 + i * 2]), 0.2, b2Color(1, 0.5, 0));
+    }
+    array b(60, 2);
+    for (int i = 0; i < 60; ++i) {
+      b.data[0 + i * 2] = sin(i * b2_pi / 30 + rsStep * 0.01) * 2.5;
+      b.data[1 + i * 2] = cos(i * b2_pi / 30 + rsStep * 0.01) * 2.5;
+    }
+    auto v = actor->predict(a, NN_SIZE, false);
+    auto vv = np.clip(actor->predict(b, NN_SIZE, false), -1.5, 1.5);
+    for (int i = 0; i < vv.sx; ++i) {
+      b2Vec2 aa(vv.data[0 + i * 2], vv.data[1 + i * 2]);
+      b2Vec2 bb(b.data[0 + i * 2], b.data[1 + i * 2]);
+      g_debugDraw.DrawSegment(aa + bb, bb, b2Color(0.75, 1, 0));
+      g_debugDraw.DrawCircle(0.85 * bb, 0.15, b2Color(0.85, 0.25, 0));
+    }
+    if (0) {
+      auto g = a - v;
+      float sum = 0;
+      for (auto i : g.data) {
+        sum += (i > 0 ? i : -i);
+      }
+      sum /= (g.sx * g.sy);
+      actor->train(a, g, NN_SIZE);
+    } else {
+#define ACTION_BOUND 16.0
+      const float ACTOR_LEARNING_RATE = 0.0001;
+      const float CRITIC_LEARNING_RATE = 0.001;
+      const float GAMMA = 0.99;
+      const float TAU = 0.125;
+      bool target;
+      const int batchsize = 100;
+      b2Color cl;
+      for (int i = 0; i < 20; ++i) {
+        for (int j = 0; j < 10; ++j) {
+          b2Vec2 d(actions[i * 10 + j][0], actions[i * 10 + j][1]);
+          b2Vec2 n(a[i][0], a[i][1]);
+          b2Vec2 m = n;
+          n.Normalize();
+          g_debugDraw.DrawSegment(m, m + b2Abs(rw[i * 10 + j][0]) * d, rw[i * 10 + j][0] > 0 ? b2Color(0.5, 0.75, 0.25) : b2Color(0.95, 0.15, 0.25));
+        }
+      }
+      auto y = np.zeros(batchsize, 1);
+      //auto a_tgt = np.clip(actor->predict(states_t_1, ACTION_BOUND, target = true), -1.5, 1.5);
+      //auto Q_tgt = critic->predict(states_t_1, a_tgt, target = true);
+      for (int k = 0; k < batchsize; ++k) {
+        // auto rw = 1.0 / (0.1 + sqrtf(ds.data[k * 2] * ds.data[k * 2] + ds.data[k * 2 + 1] * ds.data[k * 2 + 1]));
+        /*if (k == batchsize - 1)
+          y.data[k] = rw;
+        else*/
+        y.data[k] = rw.data[k]; // +GAMMA *Q_tgt.data[k];
+      }
+      //#Update critic by minimizing the loss
+      //for (int i = 0; i < 10;++i)
+      auto loss = critic->train(states_t, actions, y);
+      //#Update actor using sampled policy gradient
+      auto a_for_dQ_da = actor->predict(states_t, ACTION_BOUND);
+      //评估行动梯度
+      auto dQ_da = critic->evaluate_action_gradient(states_t, a_for_dQ_da);
+      actor->train(states_t, dQ_da, ACTION_BOUND);
+      //#print("train", j)
+      //#Update target networks
+      actor->train_target(TAU);
+      critic->train_target(TAU);
+    }
+  }
+  rsStep = (rsStep + 1); // % 3600;
+#endif
+  /*
+   if (rsStep == 0) {
+     for (auto &i : rs)
+       i = drand48()-0.5;
+     float r = 0;
+     for (int i = 99; i >= 0; --i) {
+       r = r * 0.99 + rs[i];
+       ds[i] = r;
+     }
+   }
+   rsStep = (rsStep + 1) % 50;
+   for (int i = 1; i < 100; ++i) {
+     g_debugDraw.DrawSegment(b2Vec2((i - 1)*0.1, rs[i - 1]), b2Vec2(i*0.1, rs[i]), b2Color(1, 1, 0));
+     g_debugDraw.DrawSegment(b2Vec2((i - 1)*0.1, ds[i - 1]*0.5), b2Vec2(i*0.1, ds[i]*0.5), b2Color(0.5, 1, 0));
+   }*/
+}
+class QueryCallback : public b2QueryCallback {
+public:
+  QueryCallback(const b2Vec2 &point) {
+    m_point = point;
+    m_fixture = NULL;
+  }
+  bool ReportFixture(b2Fixture *fixture) {
+    b2Body *body = fixture->GetBody();
+    if (body->GetType() == b2_dynamicBody) {
+      bool inside = fixture->TestPoint(m_point);
+      if (inside) {
+        m_fixture = fixture;
+        // We are done, terminate the query.
+        return false;
+      }
+    }
+    // Continue the query.
+    return true;
+  }
+  b2Vec2 m_point;
+  b2Fixture *m_fixture;
+};
+b2Vec2 m_mouseWorld;
+b2MouseJoint *m_mouseJoint;
+void MouseDown(const b2Vec2 &p) {
+  m_mouseWorld = p;
+  if (m_mouseJoint != NULL) {
+    return;
+  }
+  // Make a small box.
+  b2AABB aabb;
+  b2Vec2 d;
+  d.Set(0.001f, 0.001f);
+  aabb.lowerBound = p - d;
+  aabb.upperBound = p + d;
+  // Query the world for overlapping shapes.
+  QueryCallback callback(p);
+  w->QueryAABB(&callback, aabb);
+  if (callback.m_fixture) {
+    b2Body *body = callback.m_fixture->GetBody();
+    b2MouseJointDef md;
+    md.bodyA = m_groundBody;
+    md.bodyB = body;
+    md.target = p;
+    md.maxForce = 1000.0f * body->GetMass();
+    m_mouseJoint = (b2MouseJoint *)w->CreateJoint(&md);
+    body->SetAwake(true);
+  }
+}
+void MouseUp(const b2Vec2 &p) {
+  if (m_mouseJoint) {
+    w->DestroyJoint(m_mouseJoint);
+    m_mouseJoint = NULL;
+  }
+}
+void MouseMove(const b2Vec2 &p) {
+  m_mouseWorld = p;
+  if (m_mouseJoint) {
+    m_mouseJoint->SetTarget(p);
+  }
+}
+static int state_scroll = 0, save_scroll = 0;
+static bool state_show = false;
+static int ctrl = 0;
+static int touch = 0;
+static int pause = 0;
+static int subStep = 1;
+bool inv_motor = false;
+void box2d_key(int keycode) {
+  inv_motor = true;
+}
+void box2d_ui(int width, int height, int mx, int my, unsigned char mbut, int scroll) {
+  if (mbut) {
+    if (ctrl > 0) {
+      mbut = 0;
+    }
+    ctrl = 0;
+    ++touch;
+    if (over || mbut == 0)
+      imguiBeginFrame(mx, height - my, mbut, scroll);
+    else
+      imguiBeginFrame(0, 0, mbut, scroll);
+  } else {
+    ++ctrl;
+    touch = 0;
+    over = false;
+    imguiBeginFrame(0, 0, mbut, scroll);
+  }
+  char info[260];
+  sprintf(info, "scroll: %d", state_scroll);
+  int size = 72 + 200 + 12 * 3;
+  if (state_show)
+    size = height * 3 / 8;
+  over |= imguiBeginScrollArea(info, width * 2 / 3, height - size - 60, width / 3 - 10 - (width > height ? 120 : 0), size, &state_scroll);
+  if (imguiButton("Rebuild robot", true)) {
+    test->quit();
+    test->init(w, m_groundBody);
+  }
+  if (imguiButton("Pause", true)) {
+    pause = !pause;
+  }
+  if (imguiButton("Motor", true)) {
+    inv_motor = true;
+  }
+  // imguiLabel("Label");
+  imguiSlider("sub step", &subStep, 1, 16, 1, true);
+  if (imguiCollapse("Items 20", 0, state_show, true)) {
+    if (state_show) {
+      save_scroll = state_scroll;
+      state_scroll = 0;
+    } else {
+      state_scroll = save_scroll;
+    }
+    state_show = !state_show;
+  }
+  if (state_show) {
+    for (int i = 0; i < 20; ++i) {
+      sprintf(info, "item: %d", i);
+      imguiItem(info, true);
+    }
+  }
+  imguiEndScrollArea();
+  imguiEndFrame();
+  point = g_camera.ConvertScreenToWorld(b2Vec2(mx, my));
+  debugDraw->DrawCircle(point, 0.5, b2Color(1, 1, 0));
+  if (touch == 1) {
+    if (!over)
+      MouseDown(point);
+  } else if (ctrl == 1) {
+    MouseUp(point);
+  } else {
+    MouseMove(point);
+  }
+}
+float maxT = 0, jointT, speedT;
+float g_length, g_k, g_angle, g_angular;
+b2Vec2 g_pos, g_vector;
+static int reset = 0;
+void box2d_step() {
+  if (pause)
+    return;
+  /*if (inv_motor) {
+    inv_motor = false;
+    b2Joint *j = w->GetJointList();
+    while (j) {
+      if (e_revoluteJoint == j->GetType()) {
+        bool v = ((b2RevoluteJoint *)j)->IsMotorEnabled();
+        ((b2RevoluteJoint *)j)->EnableMotor(!v);
+      }
+      j = j->GetNext();
+    }
+  }*/
+  if (reset == 360) {
+    reset = 0;
+    for (int i = 0; i < BODY_COUNT; ++i) {
+      poses[i].reset();
+    }
+  } else {
+    ++reset;
+  }
+  for (int i = 0; i < subStep; ++i) {
+    test->pre_step(w);
+    w->Step(0.025f, 32, 8);
+    test->step(w);
+  }
+  if (0) {
+    b2Vec2 center(0, 0), linear(0, 0), ct(0, 0);
+    float32 mass = 0, angular = 0, g_I = 0;
+    b2Joint *j = w->GetJointList();
+    bool flag = false;
+    while (j) {
+      float32 last_mass = mass;
+      b2Vec2 last_center = ct;
+      b2Body *b = j->GetBodyB();
+      b2MassData m;
+      b->GetMassData(&m);
+      mass += m.mass;
+      center += m.mass * b->GetPosition();
+      linear += m.mass * b->GetLinearVelocity();
+      angular += m.mass * b->GetAngularVelocity();
+      ct.Set(center.x / mass, center.y / mass);
+      b2Vec2 v = b->GetPosition() - ct;
+      float32 _I = m.I + b2Dot(v, v) * m.mass;
+      v = last_center - ct;
+      g_I += _I + b2Dot(v, v) * last_mass;
+      if (flag) {
+        flag = false;
+      } else if (j->GetType() == e_revoluteJoint) {
+        b2RevoluteJoint *rj = (b2RevoluteJoint *)j;
+        if (rj->IsMotorEnabled()) {
+          b2Vec2 rotPoint = j->GetAnchorB();
+          v = ct - rotPoint;
+          _I = g_I + b2Dot(v, v) * mass;
+          float length = v.Normalize() * mass;
+          float k = sqrtf(length * 10 / _I) * 2;
+          // float angle = b2_pi - b->GetAngle();
+          float angle = atan2f(v.x, v.y);
+          while (angle < 0)
+            angle += b2_pi + b2_pi;
+          while (angle > b2_pi + b2_pi) {
+            angle -= b2_pi + b2_pi;
+          }
+          float target = sinf(angle * 0.5) * k;
+          float speed = target;
+          if (angle < b2_pi) {
+            speed = target;
+          } else {
+            speed = -target;
+          }
+          float t = b2Abs(v.x * length * -10);
+          if (v.y < 0 || t > rj->GetMaxMotorTorque()) {
+            if (angular > 0) {
+              speed = target;
+            } else {
+              speed = -target;
+            }
+          }
+          g_pos = rotPoint;
+          g_vector = v;
+          g_length = length;
+          g_angle = angle;
+          g_angular = angular / mass;
+          g_k = k;
+          maxT = t;
+          jointT = rj->GetMaxMotorTorque();
+          speedT = speed;
+          rj->SetMotorSpeed(speed);
+        }
+      }
+      j = j->GetNext();
+    }
+  }
+}
+void box2d_quit() {
+  test->quit();
+  if (w)
+    delete w;
+  w = NULL;
+}
