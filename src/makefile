@@ -22,7 +22,7 @@ DEPEND_OPTIONS = -MMD -MP -MF "$*.d" \
 DEPEND_MOVEFILE = then $(MV) -f "$(ObjDir)/$*.d.tmp" "$(ObjDir)/$*.d"; \
                   else $(RM) "$(ObjDir)/$*.d.tmp"; exit 1; fi
 
-CPPFLAGS+= -DDEMO -DCPU_ONLY -I. -I../thrid/bullet3 -I../thrid/include
+CPPFLAGS+= -DDEMO -DCPU_ONLY -I. -I../thrid/bullet3 -I../thrid/include -Iutil
 # $(DEPEND_OPTIONS)
 
 ifdef USE_DEP
